@@ -41,28 +41,38 @@ def generate_tables_in_db():
     meta.create_all(con)
     return con, meta, chains, stores, items
 
+def to_parseable(tree_string):
+    return ET.fromstring(tree_string.lower())
+
 def import_stores_to_db(path):
     con, meta, chains, stores, items = generate_tables_in_db()
     for filename in os.listdir(path):
         if not filename.startswith('Stores'):
             continue
         if filename.endswith('.xml'):
-            file = path + '/' + filename
+            file = ET.tostring(ET.parse(path + '/' + filename).getroot())
         elif filename.endswith('.gz'):
-            file = gzip.GzipFile(path + '/' + filename)
+            file = gzip.GzipFile(path + '/' + filename).read()
         else:
             continue
-        tree = ET.parse(file)
-        root = tree.getroot()
-        chain_name = root.find('ChainName').text
-        chain_id = int(root.find('ChainId').text)
+        root = to_parseable(file)
+        chain_name = root.find('.//chainname')
+        if chain_name == None:
+            chain_name = root.find('.//stores/store/chainname')
+        chain_name = chain_name.text
+        chain_id = int(root.find('.//chainid').text)
         clause = chains.insert().values(name=chain_name, id=chain_id)
         con.execute(clause)
         list_of_stores = []
-        for item in root.findall('.//SubChains/SubChain/Stores/Store'):
-            store = {'id': int(item.find('StoreId').text),
-                     'name': item.find('StoreName').text,
-                     'address': item.find('Address').text + ' ' + item.find('City').text,
+        items = root.findall('.//subchains/subchain/stores/store')
+        if len(items) == 0:
+            items = root.findall('.//stores/store')
+        for item in items:
+            address = item.find('.//address').text
+            city = item.find('.//city').text
+            store = {'id': int(item.find('.//storeid').text),
+                     'name': item.find('.//storename').text,
+                     'address': ('' if address is None else address) + ' ' + '' if city is None else city,
                      'chain': chain_id}
             list_of_stores.append(store)
         con.execute(meta.tables['stores'].insert(), list_of_stores)
@@ -70,7 +80,7 @@ def import_stores_to_db(path):
 def import_items_to_db(path):
     con, meta, chains, stores, items = generate_tables_in_db()
     for filename in os.listdir(path):
-        if not filename.startswith('Price'):
+        if not filename.startswith('PriceFull'):
             continue
         if filename.endswith('.xml'):
             file = path + '/' + filename
@@ -78,10 +88,9 @@ def import_items_to_db(path):
             file = gzip.GzipFile(path + '/' + filename)
         else:
             continue
-        tree = ET.parse(file)
-        root = tree.getroot()
-        store_id = root.find('StoreId').text
-        chain_id = root.find('ChainId').text
+        root = to_parseable(file.read())
+        store_id = root.find('.//storeid').text
+        chain_id = root.find('.//chainid').text
         res = con.execute(stores.select().where(stores.c.id == store_id).where(stores.c.chain == chain_id)).fetchall()
         if len(res) > 1:
             raise UserWarning('More than one store found', store_id, chain_id)
@@ -90,17 +99,18 @@ def import_items_to_db(path):
             continue
 
         list_of_items = []
-        for item in root.findall('.//Items/Item'):
-            store = {'id': int(item.find('ItemId').text),
+        for item in root.findall('.//items/item'):
+            id = item.find('itemid')
+            store = {'id': None if id is None else int(id.text),
                      'store': res[0].seq_id,
-                     'name': item.find('ItemName').text,
-                     'item_code': item.find('ItemCode').text,
-                     'description': item.find('ManufacturerItemDescription').text,
-                     'type': int(item.find('ItemType').text),
-                     'price': float(item.find('ItemPrice').text),
-                     'update_at': item.find('PriceUpdateDate').text,
-                     'manufacturer_name': item.find('ManufacturerName').text,
-                     'quantity': float(item.find('Quantity').text),
-                     'unit_of_measure': item.find('UnitOfMeasure').text}
+                     'name': item.find('itemname').text,
+                     'item_code': item.find('itemcode').text,
+                     'description': item.find('manufactureritemdescription').text,
+                     'type': int(item.find('itemtype').text),
+                     'price': float(item.find('itemprice').text),
+                     'update_at': item.find('priceupdatedate').text,
+                     'manufacturer_name': item.find('manufacturername').text,
+                     'quantity': float(item.find('quantity').text),
+                     'unit_of_measure': item.find('unitofmeasure').text}
             list_of_items.append(store)
         con.execute(meta.tables['items'].insert(), list_of_items)
