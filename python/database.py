@@ -2,6 +2,7 @@ import sqlalchemy
 from sqlalchemy import Table, Column, Integer, String, ForeignKey, Sequence
 import xml.etree.ElementTree as ET
 import os
+import gzip
 
 def connect(user, password, db, host='localhost', port=5432):
     url = 'postgresql://{}:{}@{}:{}/{}'
@@ -45,9 +46,13 @@ def import_stores_to_db(path):
     for filename in os.listdir(path):
         if not filename.startswith('Stores'):
             continue
-        if not filename.endswith('.xml') and not filename.endswith('.gz'):
+        if filename.endswith('.xml'):
+            file = path + '/' + filename
+        elif filename.endswith('.gz'):
+            file = gzip.GzipFile(path + '/' + filename)
+        else:
             continue
-        tree = ET.parse(path+'/'+filename)
+        tree = ET.parse(file)
         root = tree.getroot()
         chain_name = root.find('ChainName').text
         chain_id = int(root.find('ChainId').text)
@@ -67,9 +72,13 @@ def import_items_to_db(path):
     for filename in os.listdir(path):
         if not filename.startswith('Price'):
             continue
-        if not filename.endswith('.xml') and not filename.endswith('.gz'):
+        if filename.endswith('.xml'):
+            file = path + '/' + filename
+        elif filename.endswith('.gz'):
+            file = gzip.GzipFile(path + '/' + filename)
+        else:
             continue
-        tree = ET.parse(path+'/'+filename)
+        tree = ET.parse(file)
         root = tree.getroot()
         store_id = root.find('StoreId').text
         chain_id = root.find('ChainId').text
